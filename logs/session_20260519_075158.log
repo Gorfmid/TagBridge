@@ -1,0 +1,3 @@
+Biomark Tag Manager log started 2026-05-19T07:51:58
+07:51:58  Test Connection…
+07:51:58  ERROR: Unexpected hello response: 'Hello, World!'

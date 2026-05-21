@@ -1,0 +1,2 @@
+[console_scripts]
+biomark-tag-manager = customer_tag_downloader.ui.main_window:run

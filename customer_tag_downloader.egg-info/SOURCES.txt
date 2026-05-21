@@ -1,0 +1,14 @@
+pyproject.toml
+customer_tag_downloader/__init__.py
+customer_tag_downloader/__main__.py
+customer_tag_downloader/api.py
+customer_tag_downloader/export_data.py
+customer_tag_downloader/services.py
+customer_tag_downloader.egg-info/PKG-INFO
+customer_tag_downloader.egg-info/SOURCES.txt
+customer_tag_downloader.egg-info/dependency_links.txt
+customer_tag_downloader.egg-info/entry_points.txt
+customer_tag_downloader.egg-info/requires.txt
+customer_tag_downloader.egg-info/top_level.txt
+customer_tag_downloader/ui/__init__.py
+customer_tag_downloader/ui/main_window.py

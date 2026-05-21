@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: biomark-tag-manager
+Version: 1.0.0
+Summary: Biomark Tag Manager — download and export tags from BioLogic portals
+Requires-Python: >=3.10
+Requires-Dist: PySide6>=6.6.0
+Requires-Dist: requests>=2.31.0
+Requires-Dist: keyring>=25.0.0

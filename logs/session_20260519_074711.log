@@ -1,0 +1,6 @@
+Biomark Tag Manager log started 2026-05-19T07:47:11
+07:47:11  Sign In…
+07:47:11  Portal: Allflex RIP
+07:47:11  POST https://allflexrip.biologicsites.com/api/v1/token/
+07:47:11  Requesting API token…
+07:47:12  Signed in to Allflex RIP (API token). 93 site(s) loaded.

@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: customer-tag-downloader
+Version: 1.0.0
+Summary: Desktop app to download and export customer tags from biologicsites.com
+Requires-Python: >=3.10
+Requires-Dist: PySide6>=6.6.0
+Requires-Dist: requests>=2.31.0

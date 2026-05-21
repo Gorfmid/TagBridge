@@ -1,0 +1,2 @@
+[console_scripts]
+customer-tag-downloader = customer_tag_downloader.ui.main_window:run
