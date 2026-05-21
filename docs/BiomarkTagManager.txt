@@ -1,0 +1,410 @@
+================================================================================
+  BIOMARK TAG MANAGER — PROJECT DOCUMENTATION
+  Release: 1.0.0
+  Last updated: May 2026
+================================================================================
+
+TABLE OF CONTENTS
+-----------------
+  1. Overview
+  2. What Tag Manager Does
+  3. BioLogic API Concepts
+  4. Project Layout
+  5. Requirements
+  6. Running the Application
+  7. Graphical User Interface (GUI)
+  8. Portals (Biomark vs Allflex RIP)
+  9. Export Formats and File Naming
+ 10. Settings, Credentials, and Paths
+ 11. Building the Executable and Installer
+ 12. Module Reference
+ 13. Troubleshooting
+
+
+================================================================================
+1. OVERVIEW
+================================================================================
+
+Biomark Tag Manager is a Windows desktop application for downloading RFID tag
+detection data from BioLogic web portals (Biomark and Allflex RIP) and exporting
+it to TXT, CSV, or National Animal Database (.ind) files.
+
+The app is delivered as:
+
+  - Python source (development / testing)
+  - A standalone folder build: dist\BiomarkTagManager\BiomarkTagManager.exe
+    (PyInstaller one-folder layout)
+  - An Inno Setup installer: dist\Biomark TagManager Setup.exe
+
+Authentication uses the BioLogic REST API v1.2 (JWT bearer token). Credentials
+are held in memory during a session; optional password storage uses the Windows
+credential manager (keyring).
+
+
+================================================================================
+2. WHAT TAG MANAGER DOES
+================================================================================
+
+At a high level, Tag Manager supports:
+
+  SIGN IN
+    POST /api/v1/token/ with account email and password; receive a JWT access
+    token (SimpleJWT, ~15 minute lifetime). Load authorized sites for the account.
+
+  SITE SELECTION
+    Multi-select site list with search filter, Select All / None for visible rows.
+
+  TAG DOWNLOAD
+    GET /api/v1/tags/<SITE>/ with optional begin_dt and end_dt (YYYY-MM-DD).
+    One or more sites per run; optional date range quick picks (24h / 7d / 30d).
+
+  EXPORT
+    Write files under the user-chosen output folder (default: Documents\Biomark):
+      - TXT  — tab-separated values
+      - CSV  — comma-separated with header row
+      - IND  — National Animal Database format
+    Filenames: <SITECODE>-<YYYYMMDD>.<ext> (or combined ALL-<date> when single file).
+
+  CONNECTION TEST
+    GET /api/v1/hello/ — expects JSON/text "Hello World!" when the token is valid.
+
+Long-running work (sign-in, test, download) runs on a background QThread with a
+modal progress/log dialog. Cancelling or closing the dialog re-enables the UI
+without waiting for the network call to finish.
+
+
+================================================================================
+3. BIOLOGIC API CONCEPTS
+================================================================================
+
+Base URLs (trailing slashes required on all endpoints):
+
+  Biomark:     https://www.biologicsites.com/api/v1/
+  Allflex RIP: https://allflexrip.biologicsites.com/api/v1/
+
+Endpoints used by this app:
+
+  POST /token/
+    Form body: email, password
+    Response JSON: { "access": "<jwt>" }
+
+  GET /hello/
+    Bearer token; success body includes "Hello World!"
+
+  GET /authorized_sites/
+    Bearer token; list of sites the user may access (3-character site codes).
+
+  GET /tags/<SITE>/?begin_dt=YYYY-MM-DD&end_dt=YYYY-MM-DD
+    Bearer token; tag detections for the site in the date window.
+
+Official API example and PDF documentation are published on the Biomark portal
+(static/api-example.zip on biologicsites.com).
+
+IMPORTANT: The website login form accepts a username, but the token endpoint
+requires the account email address. Tag Manager validates the login field as an
+email before sign-in.
+
+
+================================================================================
+4. PROJECT LAYOUT
+================================================================================
+
+TagBridge/   (repository root; internal package name: customer_tag_downloader)
+
+  customer_tag_downloader/
+    __init__.py           Package marker
+    __main__.py           python -m customer_tag_downloader entry point
+    api.py                BioLogicClient, HTTP helpers, JWT auth
+    config.py             App paths, provider URLs, version reader
+    settings.py           settings.json + Windows keyring credentials
+    services.py           download_tags() orchestration for the UI
+    export_data.py        TXT / CSV / IND writers and filename rules
+    logging_util.py       Per-session log files under logs/
+    ui/
+      main_window.py      PySide6 main application window
+      progress_dialog.py  Modal progress and log viewer
+    resources/
+      biomark_logo.png    Header logo (optional; transparent PNG)
+
+  docs/
+    BiomarkTagManager.txt   This document
+
+  scripts/
+    build_windows.ps1       Full PyInstaller + Inno Setup build
+    build_installer.ps1     Installer only (requires existing dist build)
+    probe_connectivity.py   Quick host reachability test (dev)
+    probe_auth.py           Token/hello probe scripts (dev)
+
+  installer/
+    BiomarkTagManager.iss   Inno Setup script
+
+  BiomarkTagManager.spec    PyInstaller spec (one-folder COLLECT layout)
+  pyproject.toml            Package metadata and version (1.0.0)
+  requirements.txt          Runtime dependencies
+  build.bat                 Wrapper for build_windows.ps1
+  build_installer.bat       Wrapper for build_installer.ps1 only
+
+
+================================================================================
+5. REQUIREMENTS
+================================================================================
+
+FOR THE GUI (from source)
+  - Windows 10/11 (primary target)
+  - Python 3.10+ with PySide6
+  - pip install -r requirements.txt  (or pip install -e .)
+
+FOR THE SHIPPED EXE
+  - Windows 64-bit
+  - Microsoft Visual C++ Redistributable (x64) if DLL load errors occur
+  - Outbound HTTPS to the selected portal host (firewall / VPN as required)
+  - Valid BioLogic account email and password with API access
+
+FOR BUILDING
+  - Python 3.10+ in .venv (recommended) or system Python
+  - pip install -e . and pyinstaller>=6.0.0
+  - Inno Setup 6 for the installer (see build_installer.ps1 search paths)
+
+
+================================================================================
+6. RUNNING THE APPLICATION
+================================================================================
+
+FROM SOURCE (development)
+  From the project root:
+
+    python -m venv .venv
+    .\.venv\Scripts\Activate.ps1
+    pip install -r requirements.txt
+    python -m customer_tag_downloader
+
+  Or without activating the venv:
+
+    .\.venv\Scripts\python.exe -m customer_tag_downloader
+
+INSTALLED APPLICATION
+  Per-user install (no admin, default):
+    %LOCALAPPDATA%\Biomark\TagManager\BiomarkTagManager.exe
+
+  All-users install (UAC prompt on setup):
+    %ProgramFiles%\Biomark\TagManager\BiomarkTagManager.exe
+
+  Default tag export folder (when not overridden in settings):
+    %USERPROFILE%\Documents\Biomark
+
+  Per-user settings:
+    %LOCALAPPDATA%\Biomark\TagManager\settings.json
+
+
+================================================================================
+7. GRAPHICAL USER INTERFACE (GUI)
+================================================================================
+
+Window title: Biomark Tag Manager
+Version label: bottom-left footer (from pyproject.toml / bundled metadata)
+
+7.1 LOGIN
+  - Portal: Biomark or Allflex RIP
+  - Email: must be a valid email address (API token requirement)
+  - Password
+  - Save credentials (Windows keyring)
+  - Skip SSL certificate verification (corporate TLS inspection; use with care)
+  - Remember settings (writes settings.json)
+  - Sign In — token + load sites (background thread)
+  - Test — GET /hello/ with current token
+
+7.2 SITES
+  - Multi-select list (Ctrl+click)
+  - Search box beside All / None (filters visible rows)
+  - All / None apply to visible (filtered) sites only
+
+7.3 EXPORT
+  - Format: TXT, CSV, or IND (or all three via checkbox)
+  - Single combined file option
+  - Custom date range with From / To date pickers
+  - Quick picks: Last 24 hours, Last 7 days, Last 30 days
+  - Output folder (Browse); default Documents\Biomark
+  - Download Tags — green button, bottom-right
+
+7.4 PROGRESS DIALOG
+  - Shown during Sign In, Test, and Download
+  - Cancel stops waiting on the UI; background request may still complete
+  - Session log also written under logs/ beside install or AppData fallback
+
+
+================================================================================
+8. PORTALS (BIOMARK VS ALLFLEX RIP)
+================================================================================
+
+Configured in customer_tag_downloader/config.py (PROVIDERS).
+
+BIOMARK
+  API:  https://www.biologicsites.com/api/v1/
+  Web:  https://www.biologicsites.com/accounts/login/
+
+ALLFLEX RIP
+  API:  https://allflexrip.biologicsites.com/api/v1/
+  Web:  https://allflexrip.biologicsites.com/accounts/login/
+
+Use the portal that matches where the account was created. If one host times out
+from your network (firewall), the other may still be reachable — run
+scripts\probe_connectivity.py to check.
+
+
+================================================================================
+9. EXPORT FORMATS AND FILE NAMING
+================================================================================
+
+TXT
+  Tab-separated; columns include site_id, site_name, tag, detected_at, reader_code,
+  antenna_code.
+
+CSV
+  Standard CSV with header row.
+
+IND
+  National Animal Database layout (see export_data.py for field mapping).
+
+FILE NAMES
+  Per site:  <SITECODE>-<YYYYMMDD>.<ext>
+  Combined:  ALL-<YYYYMMDD>.<ext>
+  Date stamp uses the export run date (local time).
+
+When "All formats" is checked, each selected format is written for each site
+(or once for combined single-file mode).
+
+
+================================================================================
+10. SETTINGS, CREDENTIALS, AND PATHS
+================================================================================
+
+settings.json fields (AppSettings in settings.py):
+  provider, login_id (email), save_credentials, skip_ssl_verify,
+  save_ui_settings, export_format, export_all_formats, single_file,
+  use_custom_date_range, start_date, end_date, selected_site_ids, output_dir
+
+Credentials (optional):
+  Stored in Windows Credential Manager via keyring.
+  Service name: BiomarkTagManager
+  Key: <provider>:<email>
+
+Logs:
+  Preferred: <install_dir>\logs\session_YYYYMMDD_HHMMSS.log
+  Fallback:  %LOCALAPPDATA%\Biomark\TagManager\logs\
+
+Install paths (installer BiomarkTagManager.iss):
+  All users:     {autopf}\Biomark\TagManager
+  Current user:  {localappdata}\Biomark\TagManager
+  Setup prompts for scope on first page (PrivilegesRequiredOverridesAllowed).
+
+
+================================================================================
+11. BUILDING THE EXECUTABLE AND INSTALLER
+================================================================================
+
+FULL BUILD (from repo root)
+
+  .\build.bat
+  or
+  .\scripts\build_windows.ps1
+
+Steps performed:
+  1. pip install -e . and PyInstaller
+  2. PyInstaller BiomarkTagManager.spec -> dist\BiomarkTagManager\
+  3. Copy python3.dll (and related) next to exe for portable folder installs
+  4. Inno Setup compile -> dist\Biomark TagManager Setup.exe
+
+INSTALLER ONLY (app already built)
+
+  .\build_installer.bat
+  or
+  .\scripts\build_installer.ps1
+
+SHIP TO TESTERS
+  dist\Biomark TagManager Setup.exe
+
+VERSION BUMP CHECKLIST
+  Update together before release:
+    - pyproject.toml          (version = "x.y.z")
+    - installer/BiomarkTagManager.iss  (#define AppVersion, if not passed via /D)
+  Build scripts read version from pyproject.toml automatically.
+  UI version label reads pyproject.toml (bundled in frozen builds via spec datas).
+
+
+================================================================================
+12. MODULE REFERENCE
+================================================================================
+
+customer_tag_downloader/api.py
+  BioLogicClient — login(), test_connection(), get_sites(), get_tags()
+  ApiError, Site, HTTP helpers with trailing-slash URLs and SSL options
+
+customer_tag_downloader/config.py
+  PROVIDERS, app_version(), install_dir(), tags_dir(), logs_dir(),
+  settings_path(), resource_path()
+
+customer_tag_downloader/settings.py
+  AppSettings load/save; save_password(), load_password(), delete_password()
+
+customer_tag_downloader/services.py
+  download_tags() — fetch tags per site, delegate to export_data
+
+customer_tag_downloader/export_data.py
+  export_data(), export_all_formats(), TXT/CSV/IND writers
+
+customer_tag_downloader/logging_util.py
+  start_session_log(), append_log(), current_log_path()
+
+customer_tag_downloader/ui/main_window.py
+  MainWindow, Worker QThread, GUI layout and event handlers
+
+customer_tag_downloader/ui/progress_dialog.py
+  ProgressDialog — modal log, Cancel, dismissed signal
+
+scripts/probe_connectivity.py
+  POST dummy credentials to each portal token URL; reports reachability
+
+
+================================================================================
+13. TROUBLESHOOTING
+================================================================================
+
+ModuleNotFoundError: No module named 'PySide6'
+  Use the project venv: .\.venv\Scripts\python.exe -m customer_tag_downloader
+  Or: pip install -r requirements.txt
+
+SIGN-IN: Max retries exceeded / connection timed out
+  Usually cannot reach the portal host (firewall, VPN, outage) — not bad password.
+  Run: .\.venv\Scripts\python.exe scripts\probe_connectivity.py
+  Try Skip SSL only for certificate errors, not for timeouts.
+  Try Allflex RIP portal if the account is on that host.
+
+SIGN-IN: No active account found with the given credentials
+  Use the email address registered for API access, not the website username.
+
+SIGN-IN: Unexpected HTML response from API
+  Endpoints must use trailing slashes (e.g. /api/v1/token/). Already handled in
+  api._api_url(); if seen, verify portal URL in config.py.
+
+INVALID JSON / 401 after sign-in
+  Token may have expired (~15 minutes). Sign in again.
+
+COULD NOT SAVE CREDENTIALS
+  keyring unavailable or blocked; password is not saved but sign-in may succeed.
+
+PYTHON DLL MISSING ON ANOTHER PC
+  Ship the full dist\BiomarkTagManager folder or the installer — not exe alone.
+  Installer copies required DLLs beside BiomarkTagManager.exe.
+
+LOGO LOOKS WRONG ON DARK MODE
+  Transparent PNG may render differently under Windows dark theme; logo is shown
+  without recoloring (source colors preserved).
+
+OLD OUTPUT FOLDER STILL USED
+  settings.json remembers output_dir. Clear the path in settings or use Browse
+  to switch to Documents\Biomark.
+
+
+================================================================================
+END OF DOCUMENT
+================================================================================

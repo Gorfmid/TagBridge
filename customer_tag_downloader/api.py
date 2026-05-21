@@ -1,4 +1,12 @@
-"""Biologic Sites API client (v1.2). Credentials are held only in memory."""
+"""
+BioLogic Sites REST API client (v1.2).
+
+Authenticates with ``POST /api/v1/token/`` (email + password), then uses a JWT
+bearer token for ``/hello/``, ``/authorized_sites/``, and ``/tags/<site>/``.
+All request URLs use trailing slashes per BioLogic API requirements.
+
+Credentials and tokens are held only in memory for the lifetime of ``BioLogicClient``.
+"""
 
 from __future__ import annotations
 
@@ -21,7 +29,7 @@ _NO_RETRIES = Retry(total=0, connect=0, read=0, redirect=0)
 
 
 class ApiError(Exception):
-    """Raised when the API returns an error or an unexpected response."""
+    """API or transport failure (HTTP error body, JSON parse, SSL, or timeout)."""
 
     def __init__(self, message: str, status_code: int | None = None) -> None:
         super().__init__(message)
@@ -38,9 +46,7 @@ class Site:
 
 @dataclass
 class BioLogicClient:
-    """
-    Authenticated API client using either a JWT access token or a web session.
-    """
+    """Authenticated API client using a JWT access token (SimpleJWT ``access`` field)."""
 
     token: str | None = None
     _session: requests.Session | None = field(default=None, repr=False, compare=False)

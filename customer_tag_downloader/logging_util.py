@@ -1,4 +1,9 @@
-"""Session log file writer."""
+"""
+Per-operation session log files under ``logs_dir()``.
+
+Started when a ``ProgressDialog`` opens; lines are appended from the dialog and
+from background worker results.
+"""
 
 from __future__ import annotations
 

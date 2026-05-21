@@ -1,4 +1,9 @@
-"""Modal progress / log window for long-running operations."""
+"""
+Modal progress and log window for sign-in, connection test, and download.
+
+Emits ``dismissed`` when the user cancels or closes the dialog so the main window
+can re-enable controls without waiting for the background thread to finish.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,9 @@
-"""Persist UI settings and optional saved credentials."""
+"""
+Persist UI settings and optional saved credentials.
+
+Settings are stored as JSON under ``%LOCALAPPDATA%\\Biomark\\TagManager\\settings.json``.
+Passwords use Windows Credential Manager (``keyring``) when "Save credentials" is enabled.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +23,7 @@ SERVICE_NAME = "BiomarkTagManager"
 
 @dataclass
 class AppSettings:
+    """Serializable UI preferences; unknown keys in settings.json are ignored on load."""
     provider: str = "biomark"
     login_id: str = ""
     api_email: str = ""

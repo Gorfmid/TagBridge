@@ -23,7 +23,10 @@ a = Analysis(
     [str(entry)],
     pathex=[str(project_root)],
     binaries=extra_binaries,
-    datas=[(str(resources), "resources")],
+    datas=[
+        (str(resources), "resources"),
+        (str(project_root / "pyproject.toml"), "."),
+    ],
     hiddenimports=[
         "customer_tag_downloader.api",
         "customer_tag_downloader.config",

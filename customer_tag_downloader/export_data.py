@@ -1,4 +1,9 @@
-"""Export tag data to txt, csv, or National Animal Database (.ind) format."""
+"""
+Export tag data to TXT, CSV, or National Animal Database (.ind) format.
+
+Output filenames: ``<SITECODE>-<YYYYMMDD>.<ext>`` or ``ALL-<YYYYMMDD>.<ext>`` when
+combined into a single file. See ``docs/BiomarkTagManager.txt`` section 9.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,9 @@
-"""Biomark Tag Manager main window."""
+"""
+Biomark Tag Manager — PySide6 main window.
+
+Layout: header (logo), login, sites + export panels, download footer with version.
+Network work runs on ``Worker`` (QThread); see ``ProgressDialog`` for status/logs.
+"""
 
 from __future__ import annotations
 
@@ -31,7 +36,14 @@ from PySide6.QtWidgets import (
 )
 
 from customer_tag_downloader import api
-from customer_tag_downloader.config import APP_NAME, PROVIDERS, get_provider, resource_path, tags_dir
+from customer_tag_downloader.config import (
+    APP_NAME,
+    PROVIDERS,
+    app_version,
+    get_provider,
+    resource_path,
+    tags_dir,
+)
 from customer_tag_downloader.settings import (
     AppSettings,
     delete_password,
@@ -97,6 +109,9 @@ class MainWindow(QMainWindow):
         root.addLayout(middle, stretch=1)
 
         footer = QHBoxLayout()
+        self.version_label = QLabel(f"Version {app_version()}")
+        self.version_label.setStyleSheet("color: #666; font-size: 11px;")
+        footer.addWidget(self.version_label)
         footer.addStretch()
         self.download_button = QPushButton("Download Tags")
         self.download_button.setMinimumSize(180, 48)
@@ -179,12 +194,15 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.sites_list)
         row = QHBoxLayout()
         select_all = QPushButton("All")
-        select_all.clicked.connect(self.sites_list.selectAll)
+        select_all.clicked.connect(self._select_all_visible_sites)
         row.addWidget(select_all)
         clear_sel = QPushButton("None")
-        clear_sel.clicked.connect(self.sites_list.clearSelection)
+        clear_sel.clicked.connect(self._clear_visible_site_selection)
         row.addWidget(clear_sel)
-        row.addStretch()
+        self.sites_search_input = QLineEdit()
+        self.sites_search_input.setPlaceholderText("Search sites…")
+        self.sites_search_input.textChanged.connect(self._filter_sites_list)
+        row.addWidget(self.sites_search_input, stretch=1)
         layout.addLayout(row)
         return group
 
@@ -335,7 +353,11 @@ class MainWindow(QMainWindow):
         return [
             item.data(Qt.ItemDataRole.UserRole).id
             for item in self.sites_list.selectedItems()
+            if not item.isHidden()
         ]
+
+    def _selected_site_items(self) -> list[QListWidgetItem]:
+        return [item for item in self.sites_list.selectedItems() if not item.isHidden()]
 
     @Slot(bool)
     def _toggle_date_range(self, enabled: bool) -> None:
@@ -466,7 +488,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, APP_NAME, "Sign in first.")
             return
 
-        selected_items = self.sites_list.selectedItems()
+        selected_items = self._selected_site_items()
         if not selected_items:
             QMessageBox.warning(self, APP_NAME, "Select at least one site.")
             return
@@ -557,8 +579,36 @@ class MainWindow(QMainWindow):
     def _on_worker_finished(self) -> None:
         self._set_busy(False)
 
+    @Slot(str)
+    def _filter_sites_list(self, text: str) -> None:
+        query = text.strip().lower()
+        for index in range(self.sites_list.count()):
+            item = self.sites_list.item(index)
+            site = item.data(Qt.ItemDataRole.UserRole)
+            label = item.text().lower()
+            visible = (
+                not query
+                or query in label
+                or query in site.id.lower()
+                or query in site.name.lower()
+            )
+            item.setHidden(not visible)
+
+    def _select_all_visible_sites(self) -> None:
+        for index in range(self.sites_list.count()):
+            item = self.sites_list.item(index)
+            if not item.isHidden():
+                item.setSelected(True)
+
+    def _clear_visible_site_selection(self) -> None:
+        for index in range(self.sites_list.count()):
+            item = self.sites_list.item(index)
+            if not item.isHidden():
+                item.setSelected(False)
+
     def _populate_sites(self, sites: list[api.Site]) -> None:
         self.sites_list.clear()
+        self.sites_search_input.clear()
         saved = set(self._settings.selected_site_ids)
         for site in sites:
             label = site.name if site.name.upper() != site.id else site.id

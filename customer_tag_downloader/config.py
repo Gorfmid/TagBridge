@@ -1,13 +1,45 @@
-"""Application paths and API provider definitions."""
+"""
+Application paths, portal definitions, and release version.
+
+Paths resolve to the install folder when frozen (PyInstaller) and fall back to
+per-user AppData when Program Files is not writable. Default tag exports go to
+``Documents\\Biomark`` (see ``tags_dir()``).
+"""
 
 from __future__ import annotations
 
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 APP_NAME = "Biomark Tag Manager"
+APP_VERSION_FALLBACK = "1.0.0"
+
+
+def app_version() -> str:
+    """Read version from pyproject.toml (bundled in frozen builds)."""
+    roots: list[Path] = []
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            roots.append(Path(meipass))
+    roots.append(Path(__file__).resolve().parent.parent)
+    for root in roots:
+        path = root / "pyproject.toml"
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            if line.strip().startswith("version"):
+                match = re.search(r'"([^"]+)"', line)
+                if match:
+                    return match.group(1)
+    return APP_VERSION_FALLBACK
 APP_FOLDER = "Biomark"
 APP_SUBFOLDER = "TagManager"
 EXE_NAME = "BiomarkTagManager.exe"
@@ -15,6 +47,8 @@ EXE_NAME = "BiomarkTagManager.exe"
 
 @dataclass(frozen=True)
 class ProviderConfig:
+    """BioLogic portal identity and base URLs (API v1.2)."""
+
     id: str
     label: str
     api_base_url: str
@@ -38,6 +72,7 @@ PROVIDERS: dict[str, ProviderConfig] = {
 
 
 def get_provider(provider_id: str) -> ProviderConfig:
+    """Return provider config for ``biomark`` or ``allflex``; raises ValueError if unknown."""
     key = provider_id.strip().lower()
     if key not in PROVIDERS:
         raise ValueError(f"Unknown provider: {provider_id}")
@@ -45,6 +80,7 @@ def get_provider(provider_id: str) -> ProviderConfig:
 
 
 def install_dir() -> Path:
+    """Directory containing the exe when frozen; project root when running from source."""
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent.parent
@@ -75,14 +111,14 @@ def default_install_dir() -> Path:
 
 
 def tags_dir() -> Path:
-    preferred = install_dir() / "tags"
-    try:
-        preferred.mkdir(parents=True, exist_ok=True)
-        return preferred
-    except OSError:
-        fallback = user_data_dir() / "tags"
-        fallback.mkdir(parents=True, exist_ok=True)
-        return fallback
+    """Default folder for exported tag files: Documents\\Biomark."""
+    if os.name == "nt":
+        documents = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Documents"
+    else:
+        documents = Path.home() / "Documents"
+    path = documents / APP_FOLDER
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def logs_dir() -> Path:

@@ -1,4 +1,8 @@
-"""High-level operations used by the UI."""
+"""
+High-level download workflow used by the GUI.
+
+Fetches tag JSON per selected site, then writes export files via ``export_data``.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +23,12 @@ def download_tags(
     end_date: str | None = None,
     export_all_formats: bool = False,
 ) -> list[Path]:
-    """Download tags for each site and export to disk."""
+    """
+    Download tags for each site and export to disk.
+
+    Returns list of written file paths. When ``export_all_formats`` is True,
+    writes txt, csv, and ind for each site (or one combined set if ``single_file``).
+    """
     site_exports: list[dict[str, Any]] = []
     for site in sites:
         data = client.get_tags(site.id, start_date, end_date)

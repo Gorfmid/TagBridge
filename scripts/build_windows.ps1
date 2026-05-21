@@ -62,8 +62,8 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-$installer = Join-Path $Root "dist\BiomarkTagManager-Setup-$AppVersion.exe"
-$appDir = Join-Path $Root "dist\CustomerTagDownloader"
+$installer = Join-Path $Root "dist\Biomark TagManager Setup.exe"
+$appDir = Join-Path $Root "dist\BiomarkTagManager"
 
 Write-Host ""
 Write-Host "All done." -ForegroundColor Green

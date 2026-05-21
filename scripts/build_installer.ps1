@@ -70,7 +70,7 @@ Write-Host "Using Inno Setup: $iscc"
 $iss = Join-Path $Root "installer\BiomarkTagManager.iss"
 & $iscc "/DAppVersion=$AppVersion" $iss
 
-$installer = Join-Path $Root "dist\BiomarkTagManager-Setup-$AppVersion.exe"
+$installer = Join-Path $Root "dist\Biomark TagManager Setup.exe"
 if (-not (Test-Path $installer)) {
     throw "Installer was not created at $installer"
 }
