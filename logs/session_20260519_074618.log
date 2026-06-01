@@ -1,8 +1,0 @@
-Biomark Tag Manager log started 2026-05-19T07:46:18
-07:46:18  Sign In…
-07:46:18  Portal: Biomark
-07:46:18  POST https://www.biologicsites.com/api/v1/token/
-07:46:18  Requesting API token…
-07:46:39  ERROR: Could not reach www.biologicsites.com (connection timed out).
-
-The server may be down, blocked by a firewall, or unreachable without VPN. If you use Allflex RIP, switch the Portal dropdown to Allflex RIP.
