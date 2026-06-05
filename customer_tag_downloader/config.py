@@ -1,3 +1,10 @@
+# =============================================================================
+# File:        config.py
+# Project:     Biomark Tag Manager
+# Author:      Keith Abbott
+# Version:     1.31
+# Description: Application paths, portal URLs, and release version.
+# =============================================================================
 """
 Application paths, portal definitions, and release version.
 
@@ -15,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 APP_NAME = "Biomark Tag Manager"
-APP_VERSION_FALLBACK = "1.0.0"
+APP_VERSION_FALLBACK = "1.31"
 
 
 def app_version() -> str:

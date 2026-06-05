@@ -1,3 +1,10 @@
+# =============================================================================
+# File:        api.py
+# Project:     Biomark Tag Manager
+# Author:      Keith Abbott
+# Version:     1.31
+# Description: BioLogic REST API v1.2 client and portal site metadata fetch.
+# =============================================================================
 """
 BioLogic Sites REST API client (v1.2).
 
@@ -12,7 +19,10 @@ from __future__ import annotations
 
 import json
 import sys
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 from typing import Any
 from urllib.parse import urlencode, urlparse
 
@@ -25,7 +35,13 @@ from urllib3.util.retry import Retry
 from customer_tag_downloader.config import ProviderConfig, get_provider
 
 REQUEST_TIMEOUT = 30
+TAGS_CONNECT_TIMEOUT = 30
+TAGS_READ_TIMEOUT = 600
+TAGS_CHUNK_DAYS = 3
+TAGS_FETCH_RETRIES = 3
 _NO_RETRIES = Retry(total=0, connect=0, read=0, redirect=0)
+_TAGS_TIMEOUT = (TAGS_CONNECT_TIMEOUT, TAGS_READ_TIMEOUT)
+ChunkProgressCallback = Callable[[int, int], None]
 
 
 class ApiError(Exception):
@@ -50,6 +66,9 @@ class BioLogicClient:
 
     token: str | None = None
     _session: requests.Session | None = field(default=None, repr=False, compare=False)
+    _portal_session: requests.Session | None = field(default=None, repr=False, compare=False)
+    _login_email: str = field(default="", repr=False, compare=False)
+    _login_password: str = field(default="", repr=False, compare=False)
     auth_method: str = "token"
     verify_ssl: bool = True
     provider: ProviderConfig = field(default_factory=lambda: get_provider("biomark"))
@@ -74,6 +93,8 @@ class BioLogicClient:
             auth_method="token",
             verify_ssl=verify_ssl,
             provider=provider,
+            _login_email=email,
+            _login_password=password,
         )
 
     def test_connection(self) -> bool:
@@ -95,7 +116,8 @@ class BioLogicClient:
         if message is None:
             message = response.text.strip()
 
-        if message.strip() != "Hello World!":
+        normalized = message.strip().rstrip("!").lower().replace(",", "")
+        if normalized not in ("hello world", "hello world!"):
             raise ApiError(f"Unexpected hello response: {message!r}")
 
         return True
@@ -137,12 +159,44 @@ class BioLogicClient:
         site_id: str,
         start_date: str | None = None,
         end_date: str | None = None,
+        *,
+        on_chunk: ChunkProgressCallback | None = None,
     ) -> list[dict[str, Any]]:
         """Retrieve tag detections for a site between begin_dt and end_dt."""
         if not site_id:
             raise ApiError("Site code is required.")
 
         site_slug = str(site_id).strip().upper()
+        if start_date and end_date:
+            start = _parse_iso_date(start_date)
+            end = _parse_iso_date(end_date)
+            if start > end:
+                raise ApiError("Start date must be on or before end date.")
+            chunks = _iter_date_chunks(start, end, TAGS_CHUNK_DAYS)
+            if len(chunks) > 1:
+                records: list[dict[str, Any]] = []
+                for chunk_index, (chunk_start, chunk_end) in enumerate(chunks, start=1):
+                    if on_chunk:
+                        on_chunk(chunk_index, len(chunks))
+                    records.extend(
+                        self._fetch_tags(
+                            site_slug,
+                            chunk_start.isoformat(),
+                            chunk_end.isoformat(),
+                        )
+                    )
+                return _dedupe_tag_records(records)
+            if on_chunk:
+                on_chunk(1, 1)
+
+        return self._fetch_tags(site_slug, start_date, end_date)
+
+    def _fetch_tags(
+        self,
+        site_slug: str,
+        start_date: str | None,
+        end_date: str | None,
+    ) -> list[dict[str, Any]]:
         params: dict[str, str] = {}
         if start_date:
             params["begin_dt"] = start_date
@@ -153,9 +207,21 @@ class BioLogicClient:
         if params:
             path = f"{path}?{urlencode(params)}"
 
-        response = self._api_get(path)
-        _raise_for_status(response)
-        payload = _parse_json(response)
+        last_error: ApiError | None = None
+        payload: Any = None
+        for attempt in range(1, TAGS_FETCH_RETRIES + 1):
+            try:
+                response = self._api_get(path, timeout=_TAGS_TIMEOUT)
+                _raise_for_status(response)
+                payload = _parse_json(response)
+                break
+            except ApiError as exc:
+                last_error = exc
+                if attempt >= TAGS_FETCH_RETRIES or not _is_retryable_tag_error(exc):
+                    raise
+                time.sleep(min(2 ** (attempt - 1), 8))
+        else:
+            raise last_error or ApiError("Failed to fetch tags.")
 
         if isinstance(payload, list):
             return [_coerce_record(item) for item in payload]
@@ -169,16 +235,97 @@ class BioLogicClient:
 
         raise ApiError("Unexpected tags response format.")
 
-    def _api_get(self, path: str) -> requests.Response:
+    def get_site_info(self, site_id: str) -> dict[str, Any] | None:
+        """
+        Site metadata for IND export and display.
+
+        Tries API v1.2 ``GET /siteinfo/<site>/`` first, then the RIP portal page
+        ``GET /sites/<site>`` (Allflex) which includes Premises Number and Type/Specie.
+        """
+        site_slug = str(site_id).strip().upper()
+        if not site_slug:
+            return None
+
+        from_api = self._get_site_info_api(site_slug)
+        if from_api:
+            return from_api
+        return self._get_site_info_portal(site_slug)
+
+    def _get_site_info_api(self, site_slug: str) -> dict[str, Any] | None:
+        try:
+            response = self._api_get(f"/siteinfo/{site_slug}")
+            _raise_for_status(response)
+            if "page not found" in response.text.lower()[:500]:
+                return None
+            payload = _parse_json(response)
+        except ApiError:
+            return None
+
+        if isinstance(payload, list) and payload:
+            item = payload[0]
+            return dict(item) if isinstance(item, dict) else None
+        if isinstance(payload, dict):
+            return payload
+        return None
+
+    def _ensure_portal_session(self) -> requests.Session:
+        if self._portal_session is not None:
+            return self._portal_session
+        if not self._login_email or not self._login_password:
+            raise ApiError("Portal session unavailable. Sign in again.")
+
+        from customer_tag_downloader.portal_site import portal_login
+
+        self._portal_session = portal_login(
+            self._login_email,
+            self._login_password,
+            self.provider,
+            verify_ssl=self.verify_ssl,
+        )
+        return self._portal_session
+
+    def _get_site_info_portal(self, site_slug: str) -> dict[str, Any] | None:
+        from customer_tag_downloader.portal_site import fetch_site_from_portal
+
+        try:
+            session = self._ensure_portal_session()
+            return fetch_site_from_portal(
+                session,
+                self.provider,
+                site_slug,
+                verify_ssl=self.verify_ssl,
+            )
+        except ApiError:
+            return None
+
+    def _api_get(
+        self,
+        path: str,
+        *,
+        timeout: float | tuple[float, float] | None = None,
+    ) -> requests.Response:
         url = _api_url(path, self.provider.api_base_url)
         headers = {"Accept": "application/json"}
         verify = _ssl_verify_option(self.verify_ssl)
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
-            return _http_get(url, headers=headers, verify=verify)
+            return _http_get(
+                url,
+                headers=headers,
+                verify=verify,
+                timeout=timeout,
+                session=self._ensure_api_session(),
+            )
         if self._session:
-            return _http_get(url, headers=headers, verify=verify, session=self._session)
+            return _http_get(
+                url, headers=headers, verify=verify, session=self._session, timeout=timeout
+            )
         raise ApiError("Not authenticated. Sign in first.")
+
+    def _ensure_api_session(self) -> requests.Session:
+        if self._session is None:
+            self._session = _http_session()
+        return self._session
 
 
 def get_token(email: str, password: str, provider_id: str = "biomark") -> str:
@@ -258,16 +405,76 @@ def _ssl_error_message() -> str:
     )
 
 
+def _parse_iso_date(value: str) -> date:
+    parsed = date.fromisoformat(value.strip()[:10])
+    year = parsed.year
+    if 0 <= year < 100:
+        parsed = parsed.replace(year=year + 2000)
+    return parsed
+
+
+def _iter_date_chunks(
+    start: date,
+    end: date,
+    chunk_days: int,
+) -> list[tuple[date, date]]:
+    chunks: list[tuple[date, date]] = []
+    current = start
+    while current <= end:
+        chunk_end = min(current + timedelta(days=chunk_days - 1), end)
+        chunks.append((current, chunk_end))
+        current = chunk_end + timedelta(days=1)
+    return chunks
+
+
+def _is_retryable_tag_error(exc: ApiError) -> bool:
+    message = str(exc).lower()
+    if exc.status_code in (408, 429, 500, 502, 503, 504):
+        return True
+    return any(
+        phrase in message
+        for phrase in (
+            "timed out",
+            "timeout",
+            "connection terminated",
+            "connection reset",
+            "temporarily unavailable",
+            "max retries exceeded",
+        )
+    )
+
+
+def _dedupe_tag_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[str, str]] = set()
+    unique: list[dict[str, Any]] = []
+    for record in records:
+        tag = str(record.get("tag") or record.get("tag_id") or "")
+        detected = str(
+            record.get("detected_at")
+            or record.get("date")
+            or record.get("timestamp")
+            or ""
+        )
+        key = (tag, detected)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(record)
+    return unique
+
+
 def _http_get(
     url: str,
     *,
     headers: dict[str, str],
     verify: bool | str,
     session: requests.Session | None = None,
+    timeout: float | tuple[float, float] | None = None,
 ) -> requests.Response:
     http = session or _http_session()
+    request_timeout = timeout if timeout is not None else REQUEST_TIMEOUT
     try:
-        return http.get(url, headers=headers, timeout=REQUEST_TIMEOUT, verify=verify)
+        return http.get(url, headers=headers, timeout=request_timeout, verify=verify)
     except SSLError as exc:
         raise ApiError(_ssl_error_message()) from exc
     except RequestException as exc:

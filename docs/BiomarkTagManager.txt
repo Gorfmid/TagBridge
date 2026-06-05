@@ -1,6 +1,6 @@
 ================================================================================
   BIOMARK TAG MANAGER — PROJECT DOCUMENTATION
-  Release: 1.0.0
+  Release: 1.31
   Last updated: May 2026
 ================================================================================
 
@@ -19,6 +19,8 @@ TABLE OF CONTENTS
  11. Building the Executable and Installer
  12. Module Reference
  13. Troubleshooting
+ 14. IND Export — Field Reference and Data Sources
+ 15. Release Notes (1.31)
 
 
 ================================================================================
@@ -27,7 +29,8 @@ TABLE OF CONTENTS
 
 Biomark Tag Manager is a Windows desktop application for downloading RFID tag
 detection data from BioLogic web portals (Biomark and Allflex RIP) and exporting
-it to TXT, CSV, or National Animal Database (.ind) files.
+it to TXT, CSV, National Animal Database (.ind) files, or a user-defined custom
+column layout (CSV/TSV).
 
 The app is delivered as:
 
@@ -52,7 +55,9 @@ At a high level, Tag Manager supports:
     token (SimpleJWT, ~15 minute lifetime). Load authorized sites for the account.
 
   SITE SELECTION
-    Multi-select site list with search filter, Select All / None for visible rows.
+    Site list with search filter, All / None for visible rows.
+    Click a site to select it alone; Ctrl+click to add or remove sites from the
+    selection (for multi-site download).
 
   TAG DOWNLOAD
     GET /api/v1/tags/<SITE>/ with optional begin_dt and end_dt (YYYY-MM-DD).
@@ -60,10 +65,16 @@ At a high level, Tag Manager supports:
 
   EXPORT
     Write files under the user-chosen output folder (default: Documents\Biomark):
-      - TXT  — tab-separated values
-      - CSV  — comma-separated with header row
-      - IND  — National Animal Database format
+      - TXT    — human-readable site sections and tag lines
+      - CSV    — comma-separated with header row
+      - IND    — National Animal Database format (DCA email import)
+      - Custom — user-selected columns; comma (.csv) or tab (.txt) with header
     Filenames: <SITECODE>-<YYYYMMDD>.<ext> (or combined ALL-<date> when single file).
+
+  SAMPLE OUTPUT (preview)
+    After sign-in, the Export panel shows a live sample of export content for
+    the selected site(s), format, and date range. Click Refresh to reload.
+    Preview is read-only; it does not write export files to disk.
 
   CONNECTION TEST
     GET /api/v1/hello/ — expects JSON/text "Hello World!" when the token is valid.
@@ -94,11 +105,26 @@ Endpoints used by this app:
   GET /authorized_sites/
     Bearer token; list of sites the user may access (3-character site codes).
 
+  GET /siteinfo/<SITE>/  (BioLogic SM API v1.2)
+    Site name, slug, lat/long, timezone, is_ptagis_site, readers/antennas.
+    Works as JSON on Biomark. On Allflex RIP returns 404 HTML — use portal
+    /sites/<SITE> for Premises Number and Type/Specie instead (section 14).
+
   GET /tags/<SITE>/?begin_dt=YYYY-MM-DD&end_dt=YYYY-MM-DD
     Bearer token; tag detections for the site in the date window.
+    Optional: &test_tags=true
 
-Official API example and PDF documentation are published on the Biomark portal
-(static/api-example.zip on biologicsites.com).
+  GET /reader/<SITE>/, /enviro/<SITE>/, /antenna/<SITE>/
+    Reader, environment, and antenna telemetry for a date range (v1.2).
+
+  Portal (Allflex RIP — not in API v1.2 PDF, used by Tag Manager for IND)
+    GET /sites/<SITE>  (no trailing slash; requires web session login)
+    HTML Site Information table: Name, Site Code, Premises Number, Type/Specie,
+    Latitude, Longitude, etc.
+
+Official API example: https://www.biologicsites.com/static/api-example.zip
+Auth: POST /token/ with email + password; Bearer token ~15 minutes.
+All endpoints require trailing slashes on API URLs.
 
 IMPORTANT: The website login form accepts a username, but the token endpoint
 requires the account email address. Tag Manager validates the login field as an
@@ -118,18 +144,27 @@ TagBridge/   (repository root; internal package name: customer_tag_downloader)
     config.py             App paths, provider URLs, version reader
     settings.py           settings.json + Windows keyring credentials
     services.py           download_tags() orchestration for the UI
-    export_data.py        TXT / CSV / IND writers and filename rules
+    export_data.py        TXT / CSV / IND / custom writers; preview rendering
+    export_fields.py      Custom export column catalog (portal-specific fields)
+    ind_event.py          IND column 1 (event code) and column 2 (premise PIN)
+    ind_site_map.py       Optional per-site overrides (ind_site_map.json)
+    portal_site.py        RIP portal /sites/<code> HTML fetch and parse
+    api_schema.py         API discovery helpers (dev / logging)
     logging_util.py       Per-session log files under logs/
     ui/
-      main_window.py      PySide6 main application window
-      progress_dialog.py  Modal progress and log viewer
+      main_window.py           PySide6 main application window
+      progress_dialog.py       Modal progress and log viewer
+      custom_export_dialog.py  Column picker for custom export
+      responsive.py            Window resize / compact layout helpers
     resources/
       biomark_logo.png    Header logo (optional; transparent PNG)
 
   docs/
-    BiomarkTagManager.txt   This document
+    BiomarkTagManager.txt   All project documentation (this file)
+    ind_site_map.json.example   Sample optional site overrides
 
   scripts/
+    discover_api_schema.py   Probe API + portal fields (saved credentials)
     build_windows.ps1       Full PyInstaller + Inno Setup build
     build_installer.ps1     Installer only (requires existing dist build)
     probe_connectivity.py   Quick host reachability test (dev)
@@ -139,7 +174,7 @@ TagBridge/   (repository root; internal package name: customer_tag_downloader)
     BiomarkTagManager.iss   Inno Setup script
 
   BiomarkTagManager.spec    PyInstaller spec (one-folder COLLECT layout)
-  pyproject.toml            Package metadata and version (1.0.0)
+  pyproject.toml            Package metadata and version (1.31)
   requirements.txt          Runtime dependencies
   build.bat                 Wrapper for build_windows.ps1
   build_installer.bat       Wrapper for build_installer.ps1 only
@@ -201,32 +236,72 @@ INSTALLED APPLICATION
 ================================================================================
 
 Window title: Biomark Tag Manager
-Version label: bottom-left footer (from pyproject.toml / bundled metadata)
+
+Version label: directly under the Biomark logo (top-left).
+
+Download tags: compact green button in the bottom-right footer only.
+
+7.0 LAYOUT (1.2.0)
+  Two-column main area (drag the center splitter to resize):
+
+    LEFT COLUMN
+      - Logo and version
+      - Login (narrow; same width as Sites panel below)
+      - Sites list (search, All / None)
+
+    RIGHT COLUMN
+      - Export options (format, dates, output folder)
+      - Sample output pane with Refresh button
+
+  Minimum window size about 520×380. On smaller windows (~820×500 or less) the UI
+  uses a compact font, shorter labels, and may stack the two columns vertically.
+  Scroll bars appear when content does not fit.
+
+  Credentials and settings are never bundled in the installer or email zip —
+  each user signs in on their own PC. Saved passwords (optional) stay in Windows
+  Credential Manager on that machine only.
 
 7.1 LOGIN
   - Portal: Biomark or Allflex RIP
   - Email: must be a valid email address (API token requirement)
   - Password
-  - Save credentials (Windows keyring)
+  - Save credentials (Windows keyring) — stored per machine, not in the installer
   - Skip SSL certificate verification (corporate TLS inspection; use with care)
-  - Remember settings (writes settings.json)
+  - Remember settings (writes settings.json under AppData)
   - Sign In — token + load sites (background thread)
   - Test — GET /hello/ with current token
 
 7.2 SITES
-  - Multi-select list (Ctrl+click)
-  - Search box beside All / None (filters visible rows)
-  - All / None apply to visible (filtered) sites only
+  - Search box filters visible rows; All / None apply to visible sites only
+  - Plain click: select that site only (others deselect)
+  - Ctrl+click: add or remove a site from the selection (multi-site download)
+  - Shift+click: range select (standard list behavior)
+  - On sign-in, only sites listed in saved settings are pre-selected (if any).
+    If no sites were saved previously, nothing is selected until the user picks
+    one or more sites.
 
 7.3 EXPORT
-  - Format: TXT, CSV, or IND (or all three via checkbox)
-  - Single combined file option
+  - Format radios: TXT | CSV | IND | Custom
+  - All formats (txt, csv, ind): writes all three standard formats (not custom)
+  - Single combined file: one file per format named ALL-<YYYYMMDD>.<ext>
+  - Custom: Delimiter (comma → .csv, tab → .txt), Choose columns… dialog
   - Custom date range with From / To date pickers
   - Quick picks: Last 24 hours, Last 7 days, Last 30 days
   - Output folder (Browse); default Documents\Biomark
-  - Download Tags — green button, bottom-right
 
-7.4 PROGRESS DIALOG
+7.4 SAMPLE OUTPUT
+  - Shown only after sign-in with at least one site selected
+  - Before sign-in: placeholder text only
+  - Refresh: fetches real tag reads from the API for the selected site(s) and
+    the current date range (up to 8 sites, 5 tags per site in the preview)
+  - Header line lists selected site codes (e.g. # Sites: 5RK, JSL)
+  - Label above the text shows format and sites (e.g. Format: IND — Sites: JSL)
+  - IND preview uses line wrap; CSV/TXT use horizontal scroll for wide rows
+  - Changing format, sites, dates, or delimiter updates the preview when
+    applicable; use Refresh if the sample looks stale
+  - Hidden on very short windows to save space
+
+7.5 PROGRESS DIALOG
   - Shown during Sign In, Test, and Download
   - Cancel stops waiting on the UI; background request may still complete
   - Session log also written under logs/ beside install or AppData fallback
@@ -263,9 +338,38 @@ CSV
   Standard CSV with header row.
 
 IND
-  National Animal Database layout (see export_data.py for field mapping).
+  National Animal Database / DCA email import layout for Allflex customers.
+  Comma-separated, no header, 18 fields per tag read.
+  Full field definitions and data sources: section 14.
+
+CUSTOM
+  User-selected columns (Export → Custom). Click "Choose columns…" to open a
+  popup dialog (better on small screens than a long checklist in the main window).
+
+  Output:
+    - Comma delimiter → .csv file with header row
+    - Tab delimiter   → .txt file with header row (tab-separated values)
+
+  Default columns (same as standard CSV):
+    site_id, site_name, tag, detected_at, reader_code, antenna_code
+
+  Column list adapts to the selected portal:
+    - Biomark and Allflex: tag read fields, Type/Specie, Premises number
+    - Allflex only (DCA): Event code, Premise ID, Date/time (compact),
+      USAIN flag, Electronically read
+
+  Portal / site metadata columns use the same sources as IND export (API
+  siteinfo on Biomark; portal /sites/<code> on Allflex). Requires sign-in.
+
+  Dialog presets: Default, All, None. Selection saved in settings.json when
+  "Remember settings" is on (custom_export_fields, custom_export_delimiter).
+
+  "All formats" does not include custom — only txt, csv, and ind.
 
 FILE NAMES
+  Per site:  <SITECODE>-<YYYYMMDD>.<ext>
+  Custom comma: <SITECODE>-<YYYYMMDD>.csv
+  Custom tab:   <SITECODE>-<YYYYMMDD>.txt
   Per site:  <SITECODE>-<YYYYMMDD>.<ext>
   Combined:  ALL-<YYYYMMDD>.<ext>
   Date stamp uses the export run date (local time).
@@ -280,7 +384,8 @@ When "All formats" is checked, each selected format is written for each site
 
 settings.json fields (AppSettings in settings.py):
   provider, login_id (email), save_credentials, skip_ssl_verify,
-  save_ui_settings, export_format, export_all_formats, single_file,
+  save_ui_settings, export_format, custom_export_fields, custom_export_delimiter,
+  export_all_formats, single_file,
   use_custom_date_range, start_date, end_date, selected_site_ids, output_dir
 
 Credentials (optional):
@@ -288,9 +393,17 @@ Credentials (optional):
   Service name: BiomarkTagManager
   Key: <provider>:<email>
 
-Logs:
+Logs (not stored in git — see .gitignore):
   Preferred: <install_dir>\logs\session_YYYYMMDD_HHMMSS.log
   Fallback:  %LOCALAPPDATA%\Biomark\TagManager\logs\
+  IND exports also write logs\ind_event_code.txt (field resolution summary).
+
+Site metadata cache (IND):
+  %LOCALAPPDATA%\Biomark\TagManager\site_cache\<SITE>.json  (24-hour TTL)
+
+Optional IND overrides:
+  %LOCALAPPDATA%\Biomark\TagManager\ind_site_map.json
+  Example: docs\ind_site_map.json.example
 
 Install paths (installer BiomarkTagManager.iss):
   All users:     {autopf}\Biomark\TagManager
@@ -320,8 +433,15 @@ INSTALLER ONLY (app already built)
   or
   .\scripts\build_installer.ps1
 
-SHIP TO TESTERS
-  dist\Biomark TagManager Setup.exe
+SHIP TO TESTERS / DCAs
+  dist\Biomark TagManager Setup.exe              (run to install)
+  dist\BiomarkTagManager-Setup-1.31.zip         (installer only, for email)
+
+  Ship the installer zip or Setup.exe — not your personal settings.json, logs,
+  or site cache. Each recipient installs and signs in with their own account.
+
+  Optional portable folder (no installer): copy the entire dist\BiomarkTagManager\
+  folder including DLLs — do not copy BiomarkTagManager.exe alone.
 
 VERSION BUMP CHECKLIST
   Update together before release:
@@ -348,15 +468,38 @@ customer_tag_downloader/settings.py
 
 customer_tag_downloader/services.py
   download_tags() — fetch tags per site, delegate to export_data
+  fetch_preview_site_exports() — small API sample for the preview pane
 
 customer_tag_downloader/export_data.py
-  export_data(), export_all_formats(), TXT/CSV/IND writers
+  export_data(), export_all_formats(), render_export_preview()
+  TXT / CSV / IND / custom writers and filename rules
+
+customer_tag_downloader/export_fields.py
+  Column catalog for custom export; portal-specific fields; build_custom_row()
+
+customer_tag_downloader/ind_event.py
+  resolve_ind_event_code(), resolve_ind_premise_id() — IND columns 1 and 2
+
+customer_tag_downloader/portal_site.py
+  portal_login(), fetch_site_from_portal(), parse_site_information_html()
+
+customer_tag_downloader/ind_site_map.py
+  load_ind_site_map(), lookup_site() — optional overrides
+
+customer_tag_downloader/api_schema.py
+  API introspection for discovery script
 
 customer_tag_downloader/logging_util.py
   start_session_log(), append_log(), current_log_path()
 
 customer_tag_downloader/ui/main_window.py
   MainWindow, Worker QThread, GUI layout and event handlers
+
+customer_tag_downloader/ui/custom_export_dialog.py
+  CustomExportColumnsDialog — column picker for custom export
+
+customer_tag_downloader/ui/responsive.py
+  Compact layout breakpoints and preview/download button styling
 
 customer_tag_downloader/ui/progress_dialog.py
   ProgressDialog — modal log, Cancel, dismissed signal
@@ -403,6 +546,226 @@ LOGO LOOKS WRONG ON DARK MODE
 OLD OUTPUT FOLDER STILL USED
   settings.json remembers output_dir. Clear the path in settings or use Browse
   to switch to Documents\Biomark.
+
+IND PREMISE ID SHOWS SITE CODE INSTEAD OF PIN
+  Portal Premises Number may be blank for that site on /sites/<code>, or site
+  cache is stale (24h). Clear site_cache under AppData or add ind_site_map.json.
+
+IND EVENT CODE WRONG FOR A SITE
+  Check Type/Specie on the portal Site Information page. Tag Manager maps
+  packer/slaughter keywords to 10 and livestock keywords to 9. Override with
+  ind_site_map.json if needed.
+
+SAMPLE OUTPUT STUCK ON ONE SITE (e.g. 5RK)
+  Plain click the site you want (do not Ctrl+click unless you want multiple).
+  Confirm the label shows the intended site codes, then click Refresh.
+  Widen the date range if the preview says no tag reads in range.
+
+SAMPLE OUTPUT DOES NOT CHANGE WHEN SELECTING IND
+  Click Refresh after changing format. Confirm "All formats" is unchecked.
+  Footer version should read 1.31 on current builds.
+
+CUSTOM EXPORT COLUMNS EMPTY
+  Open Choose columns… and pick at least one column, or click Default.
+
+
+================================================================================
+14. IND EXPORT — FIELD REFERENCE AND DATA SOURCES
+================================================================================
+
+Used by Allflex customers for DCA (email tag import). Each line is one tag
+detection. Format confirmed by customer email (not reader/antenna in columns
+5 and 8).
+
+Example (site JSL — Tyson Joslin *Kill Floor):
+
+  10,00J6HQC,,202605160738,1,840003294655509,,1,,,,,,,,,,
+
+14.1 FILE STRUCTURE
+  - Comma-separated values (CSV-style)
+  - No header row
+  - Exactly 18 fields per line
+  - One line per tag read in the export date range
+
+14.2 FIELD-BY-FIELD REFERENCE
+
+  Col  Field name              Example           What it means
+  ---  ----------------------  ----------------  ---------------------------------
+  1    Event code              10                9 = livestock facility
+                                                   10 = slaughter / packer
+  2    Premise ID              00J6HQC           USDA Premises ID (PIN), 7 chars
+                                                   NOT the 3-letter site code
+  3    (reserved)              (empty)           Unused in DCA layout
+  4    Date/time               202605160738      Read timestamp YYYYMMDDHHmm
+  5    USAIN flag              1                 1 = US AIN (tag starts with 840)
+  6    Tag ID                  840003294655509   Full RFID / animal ID
+  7    (reserved)              (empty)           Unused in DCA layout
+  8    Electronically read     1                 1 = electronic reader read
+  9-18 (reserved)              (empty)           Ten trailing placeholders
+
+14.3 WHERE TAG MANAGER GETS EACH VALUE
+
+  Column 1 — Event code
+    Meaning:    Slaughter (10) vs livestock (9) for the whole site export.
+    Resolution order (first match wins):
+      1. ind_site_map.json  key event_code for site (manual override)
+      2. RIP portal Site Information  field "Type/Specie"
+         Keyword rules (ind_event.py):
+           packer, slaughter, kill, processor  -> 10
+           livestock, ranch, farm, feeder, feedyard, auction,
+           cow/calf, border  -> 9
+         Example: Packer/Cattle -> 10
+      3. Tag API JSON  event_code / site.type (if ever present; rare on Allflex)
+      4. Portal default: Allflex RIP -> 10, Biomark -> 9
+    Code:       ind_event.py resolve_ind_event_code()
+    Portal:     GET https://allflexrip.biologicsites.com/sites/<SITE>
+    Module:     portal_site.py (parsed as type_specie)
+
+  Column 2 — Premise ID (USDA PIN)
+    Meaning:    Official USDA Premises Identification Number for the facility.
+    Resolution order:
+      1. ind_site_map.json  key premise_id
+      2. RIP portal Site Information  field "Premises Number"
+      3. API /siteinfo/  premises_number (JSON on Biomark only)
+      4. Fallback: 3-letter site code (e.g. JSL) if Premises Number is blank
+    Code:       ind_event.py resolve_ind_premise_id()
+    Portal:     GET /sites/<SITE>  (web session, cached 24h in site_cache/)
+    Note:       Site Code on portal (JSL) is internal; column 2 is PIN (00J6HQC).
+
+  Column 3 — Empty
+    Always blank.  export_data.py _ind_row()
+
+  Column 4 — Date/time
+    Meaning:    When the tag was read.
+    Format:     YYYYMMDDHHmm (12 digits, no separators, local time from API).
+    Source:     REST API GET /tags/<SITE>/  field detected_at
+    Code:       export_data.py _format_ind_timestamp()
+
+  Column 5 — USAIN flag
+    Meaning:    Whether the tag is a US Animal Identification Number.
+    Values:     1 if tag number starts with 840, else 0.
+    Source:     Derived from API tag field (not a separate API property).
+    Code:       export_data.py _ind_usain_flag()
+
+  Column 6 — Tag ID
+    Meaning:    RFID / AIN printed or encoded on the tag.
+    Source:     REST API GET /tags/<SITE>/  field tag
+    Code:       export_data.py _flatten_bio_record()
+
+  Column 7 — Empty
+    Always blank.
+
+  Column 8 — Electronically read flag
+    Meaning:    Tag was read by electronic equipment (vs manual entry).
+    Value:      Always 1 for downloads from BioLogic/Allflex portals.
+    Source:     Fixed in application (electronic reader data).
+    Code:       export_data.py _ind_row(electronically_read="1")
+
+  Columns 9-18 — Empty
+    Ten empty fields required by DCA import format.
+    Code:       export_data.py IND_TRAILING_EMPTY_FIELDS = 10
+
+14.4 DATA FLOW (per site, IND export)
+
+  1. User selects site(s) and date range; chooses IND format.
+  2. JWT sign-in -> GET /tags/<SITE>/ for each site (tag rows).
+  3. Portal session -> GET /sites/<SITE> for Premises Number + Type/Specie.
+  4. Build one IND line per tag; write <SITE>-<YYYYMMDD>.ind
+  5. Write logs\ind_event_code.txt with resolution notes for that run.
+
+14.5 REFERENCE EXAMPLE — SITE JSL
+
+  Portal Site Information          IND column
+  ------------------------------   ----------
+  Site Code: JSL                    (not written to IND; used for API/URLs only)
+  Premises Number: 00J6HQC         Column 2
+  Type/Specie: Packer/Cattle       Column 1 -> 10
+  Tag + detected_at from API       Columns 6 and 4
+
+14.6 OPTIONAL OVERRIDE FILE
+
+  Path: %LOCALAPPDATA%\Biomark\TagManager\ind_site_map.json
+  Example in repo: docs\ind_site_map.json.example
+
+  {
+    "JSL": {
+      "premise_id": "00J6HQC",
+      "event_code": "10"
+    }
+  }
+
+  Use when portal data is wrong, cached too long, or missing.
+
+
+================================================================================
+15. RELEASE NOTES (1.31)
+================================================================================
+
+NEW
+  - Per-site download progress with percent complete and ETA
+  - Export files written to disk as each site finishes
+
+CHANGED
+  - Tag downloads use 3-day API chunks, longer read timeout, and automatic retries
+
+BUILD / DISTRIBUTION
+  - Installer zip: BiomarkTagManager-Setup-1.31.zip (installer only)
+
+PREVIOUS (1.3)
+  - Saved site groups and light green site selection highlight
+
+================================================================================
+16. RELEASE NOTES (1.3)
+================================================================================
+
+NEW
+  - Saved site groups: name, load, and delete multi-site selections
+  - Light green highlight for selected sites in the site list
+
+BUILD / DISTRIBUTION
+  - Installer zip: BiomarkTagManager-Setup-1.31.zip (installer only)
+
+PREVIOUS (1.21)
+  - Build Preview on demand, weekly chunked downloads, sign-in hang fix
+
+================================================================================
+16. RELEASE NOTES (1.21)
+================================================================================
+
+NEW
+  - Build Preview button: sample output loads on demand instead of on every site click
+
+CHANGED
+  - Large date-range downloads split into weekly API requests with longer read timeout
+
+FIXED
+  - Sign-in progress dialog no longer hangs after sites load
+
+BUILD / DISTRIBUTION
+  - Installer zip: BiomarkTagManager-Setup-1.21.zip (installer only)
+
+================================================================================
+17. RELEASE NOTES (1.2.0)
+================================================================================
+
+NEW
+  - Custom export: pick columns, comma or tab delimiter, portal-specific fields
+  - Sample output panel with Refresh (live API preview for selected sites)
+  - Responsive layout: splitter columns, compact mode on small windows
+  - Version shown under logo; Download button moved to footer
+
+CHANGED
+  - Site selection: plain click selects one site; Ctrl+click for multi-select
+  - Saved site selection on sign-in (no longer auto-selects all sites)
+  - Custom export column dialog replaces long inline checklist
+
+FIXED
+  - Export format preview (IND vs TXT/CSV) tracks selected radio correctly
+  - Preview reflects selected site(s) instead of stale synthetic sample
+
+BUILD / DISTRIBUTION
+  - Installer zip: BiomarkTagManager-Setup-1.21.zip (installer only)
+  - Credentials and settings.json are never packaged with the installer
 
 
 ================================================================================

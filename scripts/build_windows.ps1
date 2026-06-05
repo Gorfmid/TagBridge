@@ -63,9 +63,13 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $installer = Join-Path $Root "dist\Biomark TagManager Setup.exe"
+$zipPath = Join-Path $Root "dist\BiomarkTagManager-Setup-$AppVersion.zip"
 $appDir = Join-Path $Root "dist\BiomarkTagManager"
 
 Write-Host ""
 Write-Host "All done." -ForegroundColor Green
-Write-Host "  Installer (ship this): $installer"
-Write-Host "  App folder (dev only): $appDir"
+Write-Host "  Installer (run locally): $installer"
+if (Test-Path $zipPath) {
+    Write-Host "  Zip for email:           $zipPath"
+}
+Write-Host "  App folder (dev only):     $appDir"

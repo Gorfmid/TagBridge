@@ -1,3 +1,10 @@
+# =============================================================================
+# File:        BiomarkTagManager.spec
+# Project:     Biomark Tag Manager
+# Author:      Keith Abbott
+# Version:     1.31
+# Description: PyInstaller spec (one-folder COLLECT layout).
+# =============================================================================
 # -*- mode: python ; coding: utf-8 -*-
 
 import sys
@@ -31,10 +38,17 @@ a = Analysis(
         "customer_tag_downloader.api",
         "customer_tag_downloader.config",
         "customer_tag_downloader.export_data",
+        "customer_tag_downloader.export_fields",
+        "customer_tag_downloader.ind_event",
+        "customer_tag_downloader.ind_site_map",
+        "customer_tag_downloader.portal_site",
+        "customer_tag_downloader.api_schema",
         "customer_tag_downloader.services",
         "customer_tag_downloader.settings",
         "customer_tag_downloader.logging_util",
         "customer_tag_downloader.ui.main_window",
+        "customer_tag_downloader.ui.custom_export_dialog",
+        "customer_tag_downloader.ui.responsive",
         "customer_tag_downloader.ui.progress_dialog",
         "keyring.backends.Windows",
         "certifi",

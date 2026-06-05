@@ -18,13 +18,16 @@ python -m customer_tag_downloader
 .\build.bat
 ```
 
-Ship: `dist\Biomark TagManager Setup.exe`
+Ship: `dist\Biomark TagManager Setup.exe` or `dist\BiomarkTagManager-Setup-<version>.zip` (for email)
 
 ## Documentation
 
-Full project documentation (SiteShift-style): **[docs/BiomarkTagManager.txt](docs/BiomarkTagManager.txt)**
+All project documentation is in one file:
 
-Topics covered: API endpoints, GUI workflow, export formats, paths, build steps, module reference, troubleshooting.
+**[docs/BiomarkTagManager.txt](docs/BiomarkTagManager.txt)**
+
+Includes API reference, GUI workflow, IND/DCA field definitions (with data sources per column),
+build steps, module reference, and troubleshooting.
 
 ## Version
 

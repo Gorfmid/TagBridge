@@ -1,3 +1,10 @@
+# =============================================================================
+# File:        logging_util.py
+# Project:     Biomark Tag Manager
+# Author:      Keith Abbott
+# Version:     1.31
+# Description: Per-session log files under logs_dir().
+# =============================================================================
 """
 Per-operation session log files under ``logs_dir()``.
 

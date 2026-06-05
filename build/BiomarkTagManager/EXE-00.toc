@@ -73,7 +73,7 @@
  [],
  False,
  False,
- 1779377966,
+ 1780689921,
  [('runw.exe',
    'C:\\Users\\keith.abbott\\Documents\\projects\\TagBridge\\.venv\\Lib\\site-packages\\PyInstaller\\bootloader\\Windows-64bit-intel\\runw.exe',
    'EXECUTABLE')],

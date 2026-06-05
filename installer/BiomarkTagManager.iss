@@ -2,7 +2,7 @@
 ; Prompts: install for all users (Program Files, requires UAC) or current user only (no elevation)
 
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "1.31"
 #endif
 
 #define MyAppName "Biomark Tag Manager"

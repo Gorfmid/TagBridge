@@ -1,3 +1,10 @@
+# =============================================================================
+# File:        settings.py
+# Project:     Biomark Tag Manager
+# Author:      Keith Abbott
+# Version:     1.31
+# Description: Persist UI settings and optional Windows keyring credentials.
+# =============================================================================
 """
 Persist UI settings and optional saved credentials.
 
@@ -31,12 +38,16 @@ class AppSettings:
     skip_ssl_verify: bool = False
     save_ui_settings: bool = True
     export_format: str = "csv"
+    custom_export_fields: list[str] = field(default_factory=list)
+    custom_export_delimiter: str = ","
     export_all_formats: bool = False
     single_file: bool = False
     use_custom_date_range: bool = True
     start_date: str = ""
     end_date: str = ""
     selected_site_ids: list[str] = field(default_factory=list)
+    site_groups: dict[str, list[str]] = field(default_factory=dict)
+    active_site_group: str = ""
     output_dir: str = ""
 
     @classmethod
@@ -55,11 +66,30 @@ class AppSettings:
         settings = cls(**filtered)
         if not isinstance(settings.selected_site_ids, list):
             settings.selected_site_ids = []
+        if not isinstance(settings.custom_export_fields, list):
+            settings.custom_export_fields = []
+        settings.site_groups = normalize_site_groups(getattr(settings, "site_groups", {}))
+        if not isinstance(settings.active_site_group, str):
+            settings.active_site_group = ""
         return settings
 
     def save(self) -> None:
         path = settings_path()
         path.write_text(json.dumps(asdict(self), indent=2), encoding="utf-8")
+
+
+def normalize_site_groups(raw: Any) -> dict[str, list[str]]:
+    if not isinstance(raw, dict):
+        return {}
+    groups: dict[str, list[str]] = {}
+    for name, site_ids in raw.items():
+        label = str(name).strip()
+        if not label or not isinstance(site_ids, list):
+            continue
+        ids = sorted({str(site_id).strip().upper() for site_id in site_ids if site_id})
+        if ids:
+            groups[label] = ids
+    return groups
 
 
 def _credential_key(provider: str, login_id: str) -> str:

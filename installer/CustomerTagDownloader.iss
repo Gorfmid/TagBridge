@@ -2,7 +2,7 @@
 ; https://jrsoftware.org/isinfo.php
 
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "1.31"
 #endif
 
 #define MyAppName "Customer Tag Downloader"

@@ -75,6 +75,16 @@ if (-not (Test-Path $installer)) {
     throw "Installer was not created at $installer"
 }
 
+$zipName = "BiomarkTagManager-Setup-$AppVersion.zip"
+$zipPath = Join-Path $Root "dist\$zipName"
+if (Test-Path $zipPath) {
+    Remove-Item $zipPath -Force
+}
+Write-Host "Creating email zip..."
+Compress-Archive -LiteralPath $installer -DestinationPath $zipPath -CompressionLevel Optimal
+
 Write-Host ""
 Write-Host "Installer created:" -ForegroundColor Green
 Write-Host "  $installer"
+Write-Host "Email zip:" -ForegroundColor Green
+Write-Host "  $zipPath"
